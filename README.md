@@ -59,7 +59,7 @@ spark = SparkSession.builder \
 > If you are using the provided notebook, this has already been done at the top.
 
 A screenshot of the driver and total memory after loading in the data:
-![spark_screenshot](visualizations/spark_screenshot.png)
+![spark_screenshot](visualizations/spark_screenshot.PNG)
 
 ## 1.3 Running the Jupyter Notebook
 To run the notebook, the following criteria must be met (or workarounds must be created by the user):
