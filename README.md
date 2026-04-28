@@ -11,10 +11,10 @@ Documentation of the working environment and data dictionary.
 
 Once logged into SDSC Expanse, we launch a JupyterLab session with the provided cluster information above (8 cores, 128 GB of memory). As this is a shared cluster, there may be a queue before the session becomes available. Open a Jupyter Notebook and initialize a Spark session as seen in the [Spark Session Variables and Build](https://github.com/Autonomousse/nyc_taxi_surge_pricing/blob/master/taxi_surge_pricing.ipynb#Spark-Session-Variables-and-Build) cell. A breakdown of the calculations and corresponding values is below:
 
-```
-total_executor_cores = 8 (the total number of cores when initializing the session)
-total_memory = 128 GB (the total memory when initializing the session)
-driver_memory_reserve = 2 GB (the driver coordinates the executors, does not process data)
+```python
+total_executor_cores = 8      # (the total number of cores when initializing the session)
+total_memory = 128 GB         # (the total memory when initializing the session)
+driver_memory_reserve = 2 GB  # (the driver coordinates the executors, does not process data)
 
 executor_cores = total_executor_cores - 1 (reserves 1 core for the driver, remaining for executors)
 executor_memory = (total_memory - driver_memory_reserve) / executor_cores
@@ -25,19 +25,23 @@ spark = SparkSession.builder \
 .config('spark.executor.instances', executor_cores) \
 .getOrCreate()
 
-Same as above, but with the calculations and values provided for visual reference:
-
+# Same as above, but with the calculations and values provided for visual reference:
 spark = SparkSession.builder \
-.config("spark.driver.memory", "2g") \     # 2 reserved
-.config("spark.executor.memory", "18g") \  # (128 - 2) / (8 - 1) = 126 / 7 = 18
-.config('spark.executor.instances', 7) \   # 8 - 1 = 7
+# 2 reserved
+.config("spark.driver.memory", "2g") \
+
+# (128 - 2) / (8 - 1) = 126 / 7 = 18
+.config("spark.executor.memory", "18g") \
+
+# 8 - 1 = 7
+.config('spark.executor.instances', 7) \
 .getOrCreate()
 ```
 > [!NOTE]
 > The driver doesn't need much memory as it processes minimal data from aggregations. For visualizations or ML algorithms, may increase to 4 GB.
 
 > [!IMPORTANT]
-> ``` from pyspark.sql import DataFrame, SparkSession # import before initializing spark session builder ```
+> ```python from pyspark.sql import DataFrame, SparkSession # import before initializing spark session builder ```
 
     
     
