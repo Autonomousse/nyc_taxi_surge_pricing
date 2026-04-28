@@ -58,6 +58,9 @@ spark = SparkSession.builder \
 > ```from pyspark.sql import SparkSession # import before initializing spark session builder```
 > If you are using the provided notebook, this has already been done at the top.
 
+A screenshot of the driver and total memory after loading in the data:
+![spark_screenshot](spark_screenshot.png)
+
 ## 1.3 Running the Jupyter Notebook
 To run the notebook, the following criteria must be met (or workarounds must be created by the user):
 
@@ -75,9 +78,9 @@ To run the notebook, the following criteria must be met (or workarounds must be 
 
 ## 2.1 Data Source
 The entire data set can be found here: [NYC Government](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page).
-    - The specific files we are using are the **High Volume For-Hire Vehicle Trip Records** starting from February 2019 to February 2026 (inclusive). These files are available in parquet format, which is the preferred format for analyzing large sets of data.
-    - The Taxi Zone Maps and Lookup Table in CSV format will also be utilized for this analysis.
-    - A data dictionary is also provided on the website and here.
+- The specific files we are using are the **High Volume For-Hire Vehicle Trip Records** starting from February 2019 to February 2026 (inclusive). These files are available in parquet format, which is the preferred format for analyzing large sets of data.
+- The Taxi Zone Maps and Lookup Table in CSV format will also be utilized for this analysis.
+- A data dictionary is also provided on the website and here.
 > [!TIP]
 > If using the provided notebook, all of hte files will be downloaded automatically.
   
