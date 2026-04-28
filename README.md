@@ -84,7 +84,7 @@ The entire data set can be found here: [NYC Government](https://www.nyc.gov/site
 > [!TIP]
 > If using the provided notebook, all of hte files will be downloaded automatically.
   
-# 2.2 Data Dictionary
+## 2.2 Data Dictionary
 
 | Field Name                 | Description                                                                                          |
 |----------------------------|------------------------------------------------------------------------------------------------------|
@@ -114,7 +114,41 @@ The entire data set can be found here: [NYC Government](https://www.nyc.gov/site
 | **wav_match_flag**         | Did the trip occur in a wheelchair-accessible vehicle (WAV)? (Y/N)                                   |
 | **cbd_congestion_fee**     | Per-trip charge for MTA's Congestion Relief Zone starting Jan. 5, 2025.                              |
 
+## 2.3 Distribution of the Data
 
+These are the columns that we will be using for our analysis:
 
+| Field Name                 | Description                                                                                                 |
+|----------------------------|-------------------------------------------------------------------------------------------------------------|
+| **hvfhs_license_num**      | 4 unique categorical identifiers for Juno (HV0002), Uber(HV0003), Via (HV0004), Lyft (HV0005).              |
+| **request_datetime**       | Continuous datetime variable for requested pickup time.                                                     |
+| **pickup_datetime**        | Continuous datetime for pick-up.                                                                            |
+| **dropoff_datetime**       | Continuous datetime for drop-up.                                                                            |
+| **PULocationID**           | Categorical zone identifier where the trip began. 265 values.                                               |
+| **DOLocationID**           | Categorical zone identifier where the trip ended. 265 values.                                               |
+| **trip_miles**             | Continuous variable for total miles.                                                                        |
+| **trip_time**              | Continuous variable for total time of the trip in seconds                                                   |
+| **base_passenger_fare**    | Continuous variable for base fare.                                                                          |
+| **tolls**                  | Continuous variable for all tolls paid in trip.                                                             |
+| **bcf**                    | Continuous variable for total amount collected for Black Car Fund.                                          |
+| **sales_tax**              | Continuous variable for total amount collected for NYS sales tax.                                           |
+| **congestion_surcharge**   | Continuous variable for total amount collected for NYS congestion surcharge.                                |
+| **airport_fee**            | $2.50 for both drop off and pick up at LaGuardia, Newark, and John F. Kennedy airports.                     |
+| **tips**                   | Continuous variable for total amount of tips received from passenger.                                       |
+| **driver_pay**             | Continuous variable for total driver pay.                                                                   |
+| **shared_request_flag**    | Binary variable for shared/pooled ride.                                                                     |
+| **shared_match_flag**      | Binary variable for if the passenger shared a ride.                                                         |
+| **access_a_ride_flag**     | Binary variable for if trip was administered on behald of MTA.                                              |
+| **wav_request_flag**       | Binary variable for if passenger requested a wheelchair-accessible vehicle.                                 |
+| **wav_match_flag**         | Binary variable for if the trip occurred in a wheelchair-accessible vehicle.                                |
+| **surge_price**            | Binary variable that will detect surge pricing. Target variable that will be calculated in the next steps.  |
 
+Here we can see some quick summary stats of the data:
 
+| Summary    | trip_miles  | trip_time  | base_passenger_fare | tolls      | bcf        | sales_tax  | congestion_surcharge | airport_fee | tips       | driver_pay |
+|------------|-------------|------------|---------------------|------------|------------|------------|----------------------|-------------|------------|------------|
+| **count**  | 1521319081  | 1521319081 | 1521319081          | 1521319081 | 1521319081 | 1521319081 | 1520806040           | 1106884027  | 1521319081 | 1521319081 |
+| **mean**   | 4.9256      | 1156.1248  | 23.0378             | 1.0285     | 0.6308     | 1.9330     | 1.0175               | 0.1983      | 0.9709     | 18.2325    |
+| **stddev** | 5.7233      | 830.2167   | 20.8419             | 3.6747     | 0.6331     | 1.7166     | 1.3173               | 0.6790      | 3.0405     | 16.1434    |
+| **min**    | 0.0         | 0          | -1969.5900          | 0.0        | 0.0        | -3.0000    | 0.0                  | 0.0         | 0.0        | -6867.2800 |
+| **max**    | 5380.7800   | 240764     | 8157.7400           | 1720.0     | 213.0200   | 724.0800   | 13.7500              | 10.0        | 1000.0     | 4894.6200  |
