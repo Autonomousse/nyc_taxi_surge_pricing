@@ -118,30 +118,30 @@ The entire data set can be found here: [NYC Government](https://www.nyc.gov/site
 
 These are the columns that we will be using for our analysis:
 
-| Field Name                 | Description                                                                                                 |
-|----------------------------|-------------------------------------------------------------------------------------------------------------|
-| **hvfhs_license_num**      | 4 unique categorical identifiers for Juno (HV0002), Uber(HV0003), Via (HV0004), Lyft (HV0005).              |
-| **request_datetime**       | Continuous datetime variable for requested pickup time.                                                     |
-| **pickup_datetime**        | Continuous datetime for pick-up.                                                                            |
-| **dropoff_datetime**       | Continuous datetime for drop-up.                                                                            |
-| **PULocationID**           | Categorical zone identifier where the trip began. 265 values.                                               |
-| **DOLocationID**           | Categorical zone identifier where the trip ended. 265 values.                                               |
-| **trip_miles**             | Continuous variable for total miles.                                                                        |
-| **trip_time**              | Continuous variable for total time of the trip in seconds                                                   |
-| **base_passenger_fare**    | Continuous variable for base fare.                                                                          |
-| **tolls**                  | Continuous variable for all tolls paid in trip.                                                             |
-| **bcf**                    | Continuous variable for total amount collected for Black Car Fund.                                          |
-| **sales_tax**              | Continuous variable for total amount collected for NYS sales tax.                                           |
-| **congestion_surcharge**   | Continuous variable for total amount collected for NYS congestion surcharge.                                |
-| **airport_fee**            | $2.50 for both drop off and pick up at LaGuardia, Newark, and John F. Kennedy airports.                     |
-| **tips**                   | Continuous variable for total amount of tips received from passenger.                                       |
-| **driver_pay**             | Continuous variable for total driver pay.                                                                   |
-| **shared_request_flag**    | Binary variable for shared/pooled ride.                                                                     |
-| **shared_match_flag**      | Binary variable for if the passenger shared a ride.                                                         |
-| **access_a_ride_flag**     | Binary variable for if trip was administered on behald of MTA.                                              |
-| **wav_request_flag**       | Binary variable for if passenger requested a wheelchair-accessible vehicle.                                 |
-| **wav_match_flag**         | Binary variable for if the trip occurred in a wheelchair-accessible vehicle.                                |
-| **surge_price**            | Binary variable that will detect surge pricing. Target variable that will be calculated in the next steps.  |
+| Field Name                 | Description                                                                                    |
+|----------------------------|------------------------------------------------------------------------------------------------|
+| **hvfhs_license_num**      | 4 unique categorical identifiers for Juno (HV0002), Uber(HV0003), Via (HV0004), Lyft (HV0005). |
+| **request_datetime**       | Continuous datetime variable for requested pickup time.                                        |
+| **pickup_datetime**        | Continuous datetime for pick-up.                                                               |
+| **dropoff_datetime**       | Continuous datetime for drop-up.                                                               |
+| **PULocationID**           | Categorical zone identifier where the trip began. 265 values.                                  |
+| **DOLocationID**           | Categorical zone identifier where the trip ended. 265 values.                                  |
+| **trip_miles**             | Continuous variable for total miles.                                                           |
+| **trip_time**              | Continuous variable for total time of the trip in seconds                                      |
+| **base_passenger_fare**    | Continuous variable for base fare.                                                             |
+| **tolls**                  | Continuous variable for all tolls paid in trip.                                                |
+| **bcf**                    | Continuous variable for total amount collected for Black Car Fund.                             |
+| **sales_tax**              | Continuous variable for total amount collected for NYS sales tax.                              |
+| **congestion_surcharge**   | Continuous variable for total amount collected for NYS congestion surcharge.                   |
+| **airport_fee**            | $2.50 for both drop off and pick up at LaGuardia, Newark, and John F. Kennedy airports.        |
+| **tips**                   | Continuous variable for total amount of tips received from passenger.                          |
+| **driver_pay**             | Continuous variable for total driver pay.                                                      |
+| **shared_request_flag**    | Binary variable for shared/pooled ride.                                                        |
+| **shared_match_flag**      | Binary variable for if the passenger shared a ride.                                            |
+| **access_a_ride_flag**     | Binary variable for if trip was administered on behald of MTA.                                 |
+| **wav_request_flag**       | Binary variable for if passenger requested a wheelchair-accessible vehicle.                    |
+| **wav_match_flag**         | Binary variable for if the trip occurred in a wheelchair-accessible vehicle.                   |
+| **surge_price**            | Binary target variable that will be defined and calculated in the next steps.                  |
 
 Here we can see some quick summary stats of the data:
 
@@ -152,3 +152,49 @@ Here we can see some quick summary stats of the data:
 | **stddev** | 5.7233      | 830.2167   | 20.8419             | 3.6747     | 0.6331     | 1.7166     | 1.3173               | 0.6790      | 3.0405     | 16.1434    |
 | **min**    | 0.0         | 0          | -1969.5900          | 0.0        | 0.0        | -3.0000    | 0.0                  | 0.0         | 0.0        | -6867.2800 |
 | **max**    | 5380.7800   | 240764     | 8157.7400           | 1720.0     | 213.0200   | 724.0800   | 13.7500              | 10.0        | 1000.0     | 4894.6200  |
+
+# 3. Exploratory Data Analysis and Visualizations
+
+## 3.1 Surge Conditions - When are surge conditions more likely?
+![trips_per_hour](visualizations/trips_per_hour.png)
+
+Taking a look at trips per hour shows us when surge pricing is likely to occur. When the number of trips per hour is increasing, that is a likely scenario when the prices may surge. From the chart it looks like prices will typically be higher around the hours of 5 am - 7 am and again from 10 am - 6 pm.
+
+![trips_per_day_of_week](visualizations/trips_per_day_of_week.png)
+
+This chart maps the number of trips per day, we can see a trend of rising trips as the week goes on. Surge pricing is likely to occur on the days with the highest number of trips. Friday and Saturday when most people are out for the weekend are ideal for increased fares.
+
+## 3.2 Price Vs Distance - Are there unusual prices?
+![fare_vs_trip_time](visualizations/fare_vs_trip_time.png)
+
+We can see here that the base passenger fare seems to vary quite a lot regardless of the total time of the trip. This indicates that there may be surge pricing because a short trip can cost the same amount as a much longer trip.
+
+![fare_vs_distance](visualizations/fare_vs_distance.png)
+
+This is similar to the last chart but the fare versus the distance traveled in miles. It seems like there is a similar correlation here where the price can vary regardless of distance.
+
+## 3.3 Demand Vs Price - Is there a relationship here?
+![trips_vs_avg_fare_per_mile](visualizations/trips_vs_avg_fare_per_mile.png)
+
+This is the number of trips per hour in a zone versus the average price per hour. What this shows us is that there seems to be a high concentration on the left side where there are the lowest trips per hour but the average price varies quite a bit. This suggests that there may be surge pricing involved because the price is still within the 4-6 dollar range even at 500 trips per hour.
+
+## 3.4 Unique Employer Breakdown - Is there an even distribution or does one company have a majority?
+![trips_per_employer](visualizations/trips_per_employer.png)
+
+This is just to see if there is an even distribution of drivers for each employer. It seems like Uber has a significant market share with Lyft coming in second. Juno and Via are almost nonexistent. This kind of control would allow for surge pricing as there are less options from competitors.
+
+# 4. Preprocessing Plan
+
+It doesn't seem like there is much missing data for the numerical variables. The largest dropoff is for the airport fee which is a flat amount. We can check to see if most of these missing values are part of Juno and Via and drop them as there isn't much market share here to begin with. If not, we can either impute the values to have minimal effect on the relationship of the data. For the categorical variables there are missing values but these features may not have a strong effect on surge pricing as they are just binary values for different flags related to passenger preferences. These columns will most likely be dropped.
+
+We will be using feature engineering to create a surge_pricing column to detect the effect of surge pricing. For the rest of the columns we will apply scaling and encoding based on their values using techniques like OneHotEncoding.
+
+For preproccessing we will use Spark operations such as:
+- dropna()
+- fillna()
+- withColumn()
+- filter()
+- OneHotEncoder()
+- groupBy()
+- agg()
+- and more if needed depending on use case.
