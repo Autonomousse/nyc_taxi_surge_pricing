@@ -6,15 +6,28 @@ The specific datasets used in this study are from the [NYC Government](https://w
 # 1. Setup and Configuration
 Documentation of the working environment and data dictionary.
 
-## 1.1 SDSC Expanse and Spark Session Builder
+## 1.1 File Structure
+Within the SDSC Environment, the file structure is denoted below:
+
+```
+/home/<username>/expanse/lustre/projects/uci157/<username>/nyc_taxi_surge_pricing/
+|--- taxi_data/                        # parquet data files - not uploaded to Github
+|--- taxi_zone/                        # CSV file containing zone lookup values - not uploaded to Github
+|--- visualizations/                   # visualizations generated for analysis
+|--- taxi_surge_pricing.ipynb          # notebook with code for analysis
+```
+> [!TIP]
+> The data and visualization folders will be created automatically if you run the Jupyter Notebook.
+
+## 1.2 SDSC Expanse and Spark Session Builder
 [SDSC Expanse](https://www.sdsc.edu/systems/expanse/) is a high performance computing (HPC) cluster with an impressive system architecture able to handle high-throughput computing and even provide GPU level support. For our setup we will be initializing the cluster with 8 cores (nodes) and 128 GB of memory (per node). 128 GB of memory might seem unwarranted for a data set that is ~35 GB but it is necessary since we will be doing computations, visualizations, and running ML algorithms for this analysis.
 
-Once logged into SDSC Expanse, we launch a JupyterLab session with the provided cluster information above (8 cores, 128 GB of memory). As this is a shared cluster, there may be a queue before the session becomes available. Open a Jupyter Notebook and initialize a Spark session as seen in the [Spark Session Variables and Build](https://github.com/Autonomousse/nyc_taxi_surge_pricing/blob/master/taxi_surge_pricing.ipynb#Spark-Session-Variables-and-Build) cell. A breakdown of the calculations and corresponding values is below:
+Once logged into SDSC Expanse, we launch a JupyterLab session with the provided cluster information above (8 cores, 128 GB of memory). As this is a shared cluster, there may be a queue before the session becomes available. After it launches, open a Jupyter Notebook and initialize a Spark session as seen in the [Spark Session Variables and Build](https://github.com/Autonomousse/nyc_taxi_surge_pricing/blob/master/taxi_surge_pricing.ipynb#Spark-Session-Variables-and-Build) cell. A breakdown of the calculations and corresponding values is below:
 
 ```python
-total_executor_cores = 8      # (the total number of cores when initializing the session)
-total_memory = 128 GB         # (the total memory when initializing the session)
-driver_memory_reserve = 2 GB  # (the driver coordinates the executors, does not process data)
+total_executor_cores = 8      # the total number of cores when initializing the session
+total_memory = 128 GB         # the total memory when initializing the session
+driver_memory_reserve = 2 GB  # the driver coordinates the executors, does not process data
 
 executor_cores = total_executor_cores - 1 (reserves 1 core for the driver, remaining for executors)
 executor_memory = (total_memory - driver_memory_reserve) / executor_cores
@@ -27,7 +40,8 @@ spark = SparkSession.builder \
 
 # Same as above, but with the calculations and values provided for visual reference:
 spark = SparkSession.builder \
-# 2 reserved
+
+# 2 reserved for the driver
 .config("spark.driver.memory", "2g") \
 
 # (128 - 2) / (8 - 1) = 126 / 7 = 18
@@ -41,7 +55,63 @@ spark = SparkSession.builder \
 > The driver doesn't need much memory as it processes minimal data from aggregations. For visualizations or ML algorithms, may increase to 4 GB.
 
 > [!IMPORTANT]
-> ```python from pyspark.sql import DataFrame, SparkSession # import before initializing spark session builder ```
+> ```from pyspark.sql import SparkSession # import before initializing spark session builder```
+> If you are using the provided notebook, this has already been done at the top.
 
-    
-    
+## 1.3 Running the Jupyter Notebook
+To run the notebook, the following criteria must be met (or workarounds must be created by the user):
+
+1. Create a .env file in the same directory as the notebook and enter the following:
+    - ```user="<username>" # <username> is your username on the server.```
+    - This will be read into the notebook automatically to set the path for folder creation.
+    - Helps to keep your information safe if you intend to upload your work online.
+2. Clone the repo into your user location: ../username/***clone-here***
+3. In the Jupter Notebook, under the section labeled [Extract, Transform, and Load data into a Spark Dataframe](https://github.com/Autonomousse/nyc_taxi_surge_pricing/blob/master/taxi_surge_pricing.ipynb#Extract,-Transform,-and-Load-data-into-a-Spark-Dataframe) adjust the file location for the ***base_path*** prior to the username:
+    - ```base_path = f'<<<set your folder path up to your username here>>>/{user}/nyc_taxi_surge_pricing/'```
+> [!WARNING]
+> Please review the dependencies at the top of the notebook prior to running. Some less common dependencies have been added as an install, more may be needed depending on your environment.
+
+# 2. Data Source and Data Dictionary
+
+## 2.1 Data Source
+The entire data set can be found here: [NYC Government](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page).
+    - The specific files we are using are the **High Volume For-Hire Vehicle Trip Records** starting from February 2019 to February 2026 (inclusive). These files are available in parquet format, which is the preferred format for analyzing large sets of data.
+    - The Taxi Zone Maps and Lookup Table in CSV format will also be utilized for this analysis.
+    - A data dictionary is also provided on the website and here.
+> [!TIP]
+> If using the provided notebook, all of hte files will be downloaded automatically.
+  
+# 2.2 Data Dictionary
+
+| Field Name                 | Description                                                                                          |
+|----------------------------|------------------------------------------------------------------------------------------------------|
+| **hvfhs_license_num**      | The TLC license number of the HVFHS base or business.                                                |
+| **dispatching_base_num**   | The TLC Base License Number of the base that dispatched the trip.                                    |
+| **originating_base_num**   | Base number of the base that received the original trip request.                                     |
+| **request_datetime**       | Date/time when passenger requested to be picked up.                                                  |
+| **on_scene_datetime**      | Date/time when driver arrived at the pick-up location (Accessible Vehicles-only).                    |
+| **pickup_datetime**        | The date and time of the trip pick-up.                                                               |
+| **dropoff_datetime**       | The date and time of the trip drop-off.                                                              |
+| **PULocationID**           | TLC Taxi Zone in which the trip began.                                                               |
+| **DOLocationID**           | TLC Taxi Zone in which the trip ended.                                                               |
+| **trip_miles**             | Total miles for passenger trip.                                                                      |
+| **trip_time**              | Total time in seconds for passenger trip.                                                            |
+| **base_passenger_fare**    | Base passenger fare before tolls, tips, taxes, and fees.                                             |
+| **tolls**                  | Total amount of all tolls paid in trip.                                                              |
+| **bcf**                    | Total amount collected in trip for Black Car Fund.                                                   |
+| **sales_tax**              | Total amount collected in trip for NYS sales tax.                                                    |
+| **congestion_surcharge**   | Total amount collected in trip for NYS congestion surcharge.                                         |
+| **airport_fee**            | $2.50 for both drop off and pick up at LaGuardia, Newark, and John F. Kennedy airports.              |
+| **tips**                   | Total amount of tips received from passenger.                                                        |
+| **driver_pay**             | Total driver pay (not including tolls or tips and net of commission, surcharges, or taxes).          |
+| **shared_request_flag**    | Did the passenger agree to a shared/pooled ride, regardless of whether they were matched? (Y/N)      |
+| **shared_match_flag**      | Did the passenger share the vehicle with another passenger who booked separately at any point? (Y/N) |
+| **access_a_ride_flag**     | Was the trip administered on behalf of the Metropolitan Transportation Authority (MTA)? (Y/N)        |
+| **wav_request_flag**       | Did the passenger request a wheelchair-accessible vehicle (WAV)? (Y/N)                               |
+| **wav_match_flag**         | Did the trip occur in a wheelchair-accessible vehicle (WAV)? (Y/N)                                   |
+| **cbd_congestion_fee**     | Per-trip charge for MTA's Congestion Relief Zone starting Jan. 5, 2025.                              |
+
+
+
+
+
