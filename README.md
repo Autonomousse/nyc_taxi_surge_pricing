@@ -22,7 +22,7 @@ Within the SDSC Environment, the file structure is denoted below:
 ## 1.2 SDSC Expanse and Spark Session Builder
 [SDSC Expanse](https://www.sdsc.edu/systems/expanse/) is a high performance computing (HPC) cluster with an impressive system architecture able to handle high-throughput computing and even provide GPU level support. For our setup we will be initializing the cluster with 8 cores (nodes) and 128 GB of memory (per node). 128 GB of memory might seem unwarranted for a data set that is ~35 GB but it is necessary since we will be doing computations, visualizations, and running ML algorithms for this analysis.
 
-Once logged into SDSC Expanse, we launch a JupyterLab session with the provided cluster information above (8 cores, 128 GB of memory). As this is a shared cluster, there may be a queue before the session becomes available. After it launches, open a Jupyter Notebook and initialize a Spark session as seen in the [Spark Session Variables and Build](https://github.com/Autonomousse/nyc_taxi_surge_pricing/blob/master/taxi_surge_pricing.ipynb#Spark-Session-Variables-and-Build) cell. A breakdown of the calculations and corresponding values is below:
+Once logged into SDSC Expanse, we launch a JupyterLab session with the provided cluster information above (8 cores, 128 GB of memory). As this is a shared cluster, there may be a queue before the session becomes available. After it launches, open a Jupyter Notebook and initialize a Spark session as seen in the [Spark Session Variables and Build](https://github.com/Autonomousse/nyc_taxi_surge_pricing/blob/master/taxi_surge_pricing.ipynb#Spark-Session-Variables-and-Build) cell. A breakdown of the calculations and corresponding values are below:
 
 ```python
 total_executor_cores = 8      # the total number of cores when initializing the session
@@ -82,7 +82,7 @@ The entire data set can be found here: [NYC Government](https://www.nyc.gov/site
 - The Taxi Zone Maps and Lookup Table in CSV format will also be utilized for this analysis.
 - A data dictionary is also provided on the website and here.
 > [!TIP]
-> If using the provided notebook, all of hte files will be downloaded automatically.
+> If using the provided notebook, all of the files will be downloaded automatically.
   
 ## 2.2 Data Dictionary
 
@@ -185,9 +185,55 @@ This is just to see if there is an even distribution of drivers for each employe
 
 # 4. Preprocessing Plan
 
-It doesn't seem like there is much missing data for the numerical variables. The largest dropoff is for the airport fee which is a flat amount. We can check to see if most of these missing values are part of Juno and Via and drop them as there isn't much market share here to begin with. If not, we can either impute the values to have minimal effect on the relationship of the data. For the categorical variables there are missing values but these features may not have a strong effect on surge pricing as they are just binary values for different flags related to passenger preferences. These columns will most likely be dropped.
+## 4.1 Missing Data and Feature Engineering
 
-We will be using feature engineering to create a surge_pricing column to detect the effect of surge pricing. For the rest of the columns we will apply scaling and encoding based on their values using techniques like OneHotEncoding.
+For the numerical variables, there isn't much missing data. The largest dropoff is for the airport fee, which is reasonable since not all trips begin or end at an airport. Most of these numerical columns will be encoded as binary columns for model training. Some sanity checks and cleaning that need to be done involve looking at values that don't make sense and removing them. For example, having a negative base fare or a trip that is over 5,000 miles seem more like errors or outliers. These kinds of extreme values will be removed as they would create noisy points in the training data. The remaining columns will be either dropped or used to generate binary indicators or new columns that may signal surge pricing.
+
+Final set of features:
+
+| Feature                  | Type    | Notes                            |
+| ------------------------ | ------- | -------------------------------- |
+| `license_id `            | `int`   | encoded `hvfhs_license_num`      | 
+| `PULocationID`           | `int`   | leave as is                      |
+| `DOLocationID`           | `int`   | leave as is                      |
+| `trip_miles`             | `float` | leave as is                      |
+| `trip_time`              | `float` | leave as is                      |
+| `base_passenger_fare`    | `float` | leave as is                      |
+| `tips`                   | `float` | leave as is                      |
+| `driver_pay`             | `float` | as-is, or use `driver_pay_ratio` |
+| `has_toll`               | `int`   | `0/1`                            |
+| `has_airport_fee`        | `int`   | `0/1`                            |
+| `access_a_ride_flag_bin` | `int`   | `0/1`                            |
+| `hour_of_day`            | `int`   | extracted from `pickup_datetime` |
+| `day_of_week`            | `int`   | extracted from `pickup_datetime` |
+| `month`                  | `int`   | extracted from `pickup_datetime` |
+| `is_weekend`             | `int`   | `0/1` from `pickup_datetime`     |
+| `wait_time_secs`         | `float` | derived from `pickup_datetime`   | -- check for nulls here, if too many then drop.
+| `fare_per_mile`          | `float` | generated                        |
+| `fare_per_min`           | `float` | generated                        |
+| `driver_pay_ratio`       | `float` | generated                        |
+| `demand_zscore`          | `float` | generated                        |
+| `high_demand`            | `int`   | generated                        |
+| `PU_Borough`             | `int`   | generated from taxi lookup table |
+| `PU_Borough_ID`          | `int`   | generated from taxi lookup table |
+| `DO_Borough`             | `int`   | generated from taxi lookup table |
+| `DO_Borough_ID`          | `int`   | generated from taxi lookup table |
+| **`is_surge`**           | `int`   | generated **target label**       |
+
+## 4.2 Duplicate Values
+
+To check for duplicates, since we do not have unique trip identifiers, we can utilize the pickup datetime column. Since there are a maximum of 81 similar pickup datetimes, we can assume there are no duplicate entries in the data. 81 people being picked up at the same time on a random day doesn't seem out of the ordinary for these companies that are completing over 10,000 trips a day. That is less than 1% of the trips being completed on a daily basis. Here are the top 5 counts of matching pickup date times:
+
+| pickup_datetime     | count |
+| ------------------- | ----- |
+| 2024-11-21 23:06:49 | 81    |
+| 2020-03-16 16:55:46 | 65    |
+| 2025-02-19 08:00:00 | 65    |
+| 2026-01-28 07:30:00 | 64    |
+| 2025-02-12 07:30:00 | 63    |
+
+# 4.3 Next Steps
+We will be using feature engineering to create an is_surge column to detect the effect of surge pricing. For the rest of the columns we will apply encoding based on their values using techniques like OneHotEncoder and StringIndexer.
 
 For preproccessing we will use Spark operations such as:
 - dropna()
