@@ -220,3 +220,4 @@ __marimo__/
 
 # Adding Data Folder
 taxi_data/
+spark_temp/

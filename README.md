@@ -191,34 +191,32 @@ For the numerical variables, there isn't much missing data. The largest dropoff 
 
 Final set of features:
 
-| Feature                  | Type    | Notes                            |
-| ------------------------ | ------- | -------------------------------- |
-| `license_id `            | `int`   | encoded `hvfhs_license_num`      | 
-| `PULocationID`           | `int`   | leave as is                      |
-| `DOLocationID`           | `int`   | leave as is                      |
-| `trip_miles`             | `float` | leave as is                      |
-| `trip_time`              | `float` | leave as is                      |
-| `base_passenger_fare`    | `float` | leave as is                      |
-| `tips`                   | `float` | leave as is                      |
-| `driver_pay`             | `float` | as-is, or use `driver_pay_ratio` |
-| `has_toll`               | `int`   | `0/1`                            |
-| `has_airport_fee`        | `int`   | `0/1`                            |
-| `access_a_ride_flag_bin` | `int`   | `0/1`                            |
-| `hour_of_day`            | `int`   | extracted from `pickup_datetime` |
-| `day_of_week`            | `int`   | extracted from `pickup_datetime` |
-| `month`                  | `int`   | extracted from `pickup_datetime` |
-| `is_weekend`             | `int`   | `0/1` from `pickup_datetime`     |
-| `wait_time_secs`         | `float` | derived from `pickup_datetime`   | -- check for nulls here, if too many then drop.
-| `fare_per_mile`          | `float` | generated                        |
-| `fare_per_min`           | `float` | generated                        |
-| `driver_pay_ratio`       | `float` | generated                        |
-| `demand_zscore`          | `float` | generated                        |
-| `high_demand`            | `int`   | generated                        |
-| `PU_Borough`             | `int`   | generated from taxi lookup table |
-| `PU_Borough_ID`          | `int`   | generated from taxi lookup table |
-| `DO_Borough`             | `int`   | generated from taxi lookup table |
-| `DO_Borough_ID`          | `int`   | generated from taxi lookup table |
-| **`is_surge`**           | `int`   | generated **target label**       |
+| Feature                    | Type    | Notes                               |
+| -------------------------- | ------- | ------------------------------------|
+| `license_index`            | `int`   | encoded platform signal             | 
+| `PULocationID`             | `int`   | leave as is, geographical signal    |
+| `DOLocationID`             | `int`   | leave as is, geographical signal    |
+| `trip_miles`               | `float` | leave as is, trip characteristic    |
+| `trip_time`                | `float` | leave as is, trip characteristic    |
+| `base_passenger_fare`      | `float` | leave as is, pricing characteristic |
+| `tips`                     | `float` | leave as is, pricing characteristic |
+| `driver_pay`               | `float` | leave as is, pricing characteristic |
+| `has_toll`                 | `int`   | binary fee indicator                |
+| `has_airport_fee`          | `int`   | binary fee indicator                |
+| `has_congestion_surcharge` | `int`   | binary fee indicator                |
+| `hour_of_day`              | `int`   | temporal characteristic             |
+| `day_of_week`              | `int`   | temporal characteristic             |
+| `month`                    | `int`   | temporal characteristic             |
+| `is_weekend`               | `int`   | temporal characteristic             |
+| `wait_time_secs`           | `float` | derived demand proxy                |
+| `fare_per_mile`            | `float` | derived pricing ratio               |
+| `fare_per_min`             | `float` | derived pricing ratio               |
+| `driver_pay_ratio`         | `float` | derived pricing ratio               |
+| `demand_zscore`            | `float` | derived demand signal               |
+| `high_demand`              | `int`   | derived demand signal               |
+| `PU_Borough_ID`            | `int`   | encoded geographical signal         |
+| `DO_Borough_ID`            | `int`   | encoded geographical signal         |
+| `is_surge`                 | `int`   | derived **target label**            |
 
 ## 4.2 Duplicate Values
 
@@ -244,3 +242,50 @@ For preproccessing we will use Spark operations such as:
 - groupBy()
 - agg()
 - and more if needed depending on use case.
+
+# 5. Preprocessing and Feature Engineering
+
+## 5.1 Preprocessing
+To clean up erroneous values or outliers, we will check the 99th percentile values for `trip_mile`, `trip_time`, `base_passenfer_fare`, `driver_pay`.
+
+```python
+df.approxQuantile(
+    ["trip_miles", "trip_time", "base_passenger_fare", "driver_pay"],
+    [0.001, 0.01, 0.99, 0.999, 0.9999],
+    0.001
+)
+
+[0.0, 0.48, 26.09, 5380.78, 5380.78],
+[0.0, 193.0, 4094.0, 240764.0, 240764.0],
+[-1969.59, 3.75, 104.12, 8157.74, 8157.74],
+[-6867.28, 0.0, 77.56, 4894.62, 4894.62]
+
+```
+Based on the result, we can see that the 99.9th and 99.99th percentile values are the same as the max values for these features. This means they are most likely erroneous if not outliers and we can safely set a threshold slightly above the 99th percentile for safe measure. This will set an upper bound on the data. After setting these caps and also setting minimum values so that there are no negative values or extremely short trips, the `tips` column seems to still have a somewhat unexpected max value of $500. This was also cleaned up repeating the process for checking the 99th percentile value.
+
+## 5.2 Feature Engineering
+**is_surge**
+- The first value we want to calculate is the `median_fare_per_mile`, which is the baseline median for each platform + pickup zone + hour + day of the week. This allows us to create a baseline threshold on which to calculate surge quantifiers. Once we calculate the median, we can then create our target label, `is_surge`, by setting a threshold such as 25% above the median and check to see if the ratio of `fare_per_mile`/`median_fare_per_mile` is above or below this threshold.
+
+**high_demand**
+- Approximate demand by counting trips per zone within a rolling time window and comparing it to the historical trend. If it's above 1.5 standard deviations, it can be considered as high demand since surge pricing may occur when demand outpaces supply.
+
+**driver_pay_ratio**
+- Useful as a way to cross check against the passenger fare. If both are increased then it can indicate surge pricing.
+
+**single riders**
+- Our focus will be on single riders only since shared rides may sometimes be discounted or given at reduced rates.
+
+**hvfhs_license_num**
+- Map this feature to integer from string since it's only 4 values.
+
+**tolls, airport_fee, congestion_surcharge**
+- Map these to binary, we only want to know if these occur, the amounts are standard if they are utilized.
+
+**borough**
+- Adding borough identifiers as indices from the location id, helps to create a more generalized geographical signal since location id's might be too fine grained.
+
+After filtering the data and completing feature engineering to derive the necessary columns, we are left with 1,382,817,881 rows which means we lost about 9.1% of our overall data. This is not really an issue since we still have a generous amount of data left.
+
+# 6 Decision Tree Classifier
+## 6.1 Model Setup, Training, and Testing
