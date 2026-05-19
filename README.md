@@ -285,7 +285,124 @@ Based on the result, we can see that the 99.9th and 99.99th percentile values ar
 **borough**
 - Adding borough identifiers as indices from the location id, helps to create a more generalized geographical signal since location id's might be too fine grained.
 
-After filtering the data and completing feature engineering to derive the necessary columns, we are left with 1,382,817,881 rows which means we lost about 9.1% of our overall data. This is not really an issue since we still have a generous amount of data left.
+After filtering the data and completing feature engineering to derive the necessary columns, we are left with 1,382,815,732 rows which means we lost about 9.1% of our overall data. This is not really an issue since we still have a generous amount of data left.
 
 # 6 Decision Tree Classifier
 ## 6.1 Model Setup, Training, and Testing
+The first model we will use is a **Decision Tree Classifier (DTC)** since it is easy to decompose and understand if we need to dig into the individual nodes. Hyperparameter tuning is also not as complex as some other models and this model is supported by PySpark.
+
+The first DTC build included all 23 features, with a 70/30 split for training and testing. For the hyperparameters we used a maxDepth of 10 to allow for more complexity and maxBins was set to 265 to match the number of ID's we have in pickup and dropoff locations.
+
+Looking at the counts of our target label `is_surge`, we notice a slight class imbalance:
+| is_surge Value | Count       | Percentage |
+| -------------- | ----------- | ---------- |
+| None           |       2,149 |       0.0% |
+| 1              | 402,714,159 |     29.12% |
+| 0              | 980,101,573 |     70.88% |
+
+We can safely remove the None rows because the `median_fare_per_mile` was most likely null and missing data. It's a negligible amount of data to lose so it won't affect our outcome. Because there is a slight class imbalance here we can use class weights to allow the model to learn when surge pricing is occurring rather than simply predicting no surge because ~71% of the time that would be the correct answer. The formula for the class weights is as follows:
+
+- weight = total / (num_classes * class_count)
+
+This penalizes the model about 1.72x more for misclassifying a surge trip versus only about a 0.71x penalty for misclassifying a non surge trip. This weight was added as a hyperparameter for weightCol.
+
+After training and testing we have the following results:
+
+```
+Total rows: 1,382,815,732
+
+is_surge=1: 402,714,159 (29.12%)
+is_surge=0: 980,101,573 (70.88%)
+
+Surge weight: 1.7169
+Non-surge weight: 0.7054
+
+AUC-ROC: 0.9310                  This is a strong model, it can distinguish between surge and non surge categories well.
+accuracy: 0.9181                 High accuracy at predicting surge.
+f1: 0.9190                       Nice balance between precision and recall.
+weightedPrecision: 0.9225        The weighted precision value, adjusted for the class weight.
+weightedRecall: 0.9181           The weighted recall value, adjusted for the class weight.
+```
+
+| Feature Index | Feature                  | Importance |
+| ------------: | ------------------------ | ---------- |
+|            10 | fare_per_mile            |   0.785562 |
+|            16 | hour_of_day              |   0.061470 |
+|             2 | PU_borough_index         |   0.042712 |
+|            15 | has_congestion_surcharge |   0.037616 |
+|             0 | PULocationID             |   0.021402 |
+|            19 | is_weekend               |   0.014882 |
+|             3 | DO_borough_index         |   0.011870 |
+|            11 | fare_per_min             |   0.008050 |
+|            14 | has_airport_fee          |   0.007184 |
+|             6 | trip_time                |   0.003721 |
+|             4 | license_index            |   0.002384 |
+|            17 | day_of_week              |   0.001921 |
+|             7 | base_passenger_fare      |   0.000362 |
+|            13 | has_toll                 |   0.000304 |
+|             9 | driver_pay               |   0.000292 |
+|             1 | DOLocationID             |   0.000160 |
+|            20 | wait_time_secs           |   0.000097 |
+|             5 | trip_miles               |   0.000011 |
+|             8 | tips                     |   0.000000 |
+|            12 | driver_pay_ratio         |   0.000000 |
+|            18 | month                    |   0.000000 |
+|            21 | demand_zscore            |   0.000000 |
+|            22 | high_demand              |   0.000000 |
+
+The feature importance highlights what might be a fundamental issue. 78% of the predictive value is based on `fare_per_mile`. While this is not a straightforward data leak for our target, it may have a big impact since our target is derived from it. As a result of this we will rerun the same model but remove both `fare_per_mile` and `fare_per_min` since that may also dominate if we only removed `fare_per_mile`. Removing these two features will force the model to learn if surge exists from contextual features rather than price signals alone.
+
+The features with zero importance are also worth noting. We derived `demand_zscore` and `high_demand` specifically as surge signals but these had no impact on the model. This can mean that either `fare_per_mile` was so dominant that the model never even needed to utilize these features. After running the model again, we will see if this changes. `month` being zero simply implies that there is no differentiating factor for surge on a month to month basis after controlling for other features.
+
+This run of the DTC doesn't seem to be underfitting or overfitting, but we cannot be entirely confident since we only ran it against the test set. Since we have strong scores for AUC-ROC, accuracy, and F1, it is not underfitting because these scores would all be much lower. Since we have a maxDepth of 10, where the default value is 5, we can be somewhat certain that it is learning more complex and meaningful patterns. The test scores are all consistent so the model is not really overfitting either. It is also not overfitting because we have millions of examples per leaf, making it difficult to memorize noise. However, the best way to check is to generate the training scores and check the gap between training and validation, which we will do in a subsequent run.
+
+## 6.2 Second Run with Decision Tree Classifier
+For our second run, hyperparameters will not be tuned initially. `fare_per_mile` and `fare_per_min` have been removed from the list of features and we have also created a validation set for this run. So now we have a 70/15/15 split for training, validation, and testing. This run will have the values for the validation set. Based on the results, we will test some hyperparameter tuning before running against the test set.
+
+```
+Validation AUC-ROC: 0.8962
+accuracy: 0.8869
+f1: 0.8887
+weightedPrecision: 0.8964
+weightedRecall: 0.8869
+```
+
+| Feature Index | Feature                  | Importance |
+| ------------- | ------------------------ | ---------- |
+|             5 | trip_miles               |   0.628848 |
+|             7 | base_passenger_fare      |   0.193749 |
+|            10 | driver_pay_ratio         |   0.089184 |
+|             2 | PU_borough_index         |   0.032661 |
+|            14 | hour_of_day              |   0.028799 |
+|            13 | has_congestion_surcharge |   0.014129 |
+|             3 | DO_borough_index         |   0.008753 |
+|            12 | has_airport_fee          |   0.001152 |
+|            17 | is_weekend               |   0.001001 |
+|             6 | trip_time                |   0.000801 |
+|             0 | PULocationID             |   0.000661 |
+|            15 | day_of_week              |   0.000154 |
+|             1 | DOLocationID             |   0.000108 |
+|            11 | has_toll                 |   0.000000 |
+|             9 | driver_pay               |   0.000000 |
+|             8 | tips                     |   0.000000 |
+|            16 | month                    |   0.000000 |
+|             4 | license_index            |   0.000000 |
+|            18 | wait_time_secs           |   0.000000 |
+|            19 | demand_zscore            |   0.000000 |
+|            20 | high_demand              |   0.000000 |
+
+The model still has strong results, we only lost about 3.5% AUC by removing the strongest prior feature. However, there is a trend of pricing signals dominating the feature importance yet again. `trip_miles`, `base_passenger_fare`, and `driver_pay_ratio` are all pricing adjacent features so the model is just learning that longer trips or higher costs means surge is probable. While it is not incorrect, it seems to heavily rely on these pricing signals. This time there are still several features with zero importance, of which our two derived features are still apart of. The model is either heavily relying on pricing signals or it is not able to capture more complex relationships between features at a maxDepth of 10.
+
+Before we attempt to tune the hyperparamenters, we will run it once more. This time we will capture the training and validation scores to check for overfitting and we will remove all of the pricing adjacent features which include `trip_miles`, `base_passenger_fare`, `driver_pay_ratio`, `driver_pay`, as well as `tips` since it is often a percentage of total fare. This will show us whether or not the contextual signals actually are able to predict surge.
+
+## 6.3 Second Run with Decision Tree Classifier
+
+
+## 6.4 Conclusion and Next Steps
+
+discuss training vs validation score and training vs testing score
+conclusion, what can be done to improve further
+
+The total runtime for the entire pipeline was about 3 hours and 20 minutes. This was possible because of task parallelization and having several executors running at once to process the data, build, and evaluate the models. Trying to do this on a laptop or computer would have crashed with 1.38 billion rows of data. An additional step that will be implemented is writing the cleaned dataset to a parquet file prior to training the model, so that if the model training fails, we won't need to process the data again and can start by reading the cleaned data. This will also be helpful when we use Ray Train to run a LightGBM model a bit later on.
+
+Moving forward, we will run a LightGBM (LGBM) model as our next model. DTC creates a single tree with sequential splits, which is a weakness because it only has single model. A single bad split would result in issues all the way down the tree. It is also prone to overfitting at higher depths. With LGBM, similar to XGBoost (XGB) but uses leaf wise growth instead of level wise growth, we have a boosted ensemble method which builds trees sequentially, specifically focusing on picking the most impactful leaf to split. It also has sequential boosting (each model corrects the previous models errors), L1 and L2 regularization, native missing value handling, feature interaction detection which is a key aspect that DTC lacks, and gradient optimization. LGBM is also designed for larger datasets so it will train faster than XGB but with similar results. Setting the `num_leaves` parameter will be important so we do not overfit because leaf wise growth can overfit easily on smaller datasets. However, since this dataset is fairly large, it won't be as much of an issue but still good to keep in mind.

@@ -983,6 +983,11 @@ for row in counts:
 # Filtering out nulls for is_surge
 df_model = df_model.filter(F.col("is_surge").isNotNull())
 
+# write the result to a parquet file so if model training fails we can pick up from here.
+parquet_path = f'/expanse/lustre/projects/uci157/{user}/nyc_taxi_surge_pricing/df_model_parquet'
+df_model.write.mode("overwrite").parquet(parquet_path)
+print("df_model written to parquet")
+
 # # Model Setup - Training, Testing, Validation
 
 # In[ ]:
@@ -1015,26 +1020,40 @@ df_model = df_model.withColumn(
     F.when(F.col("is_surge") == 1, weight_surge).otherwise(weight_non_surge)
 )
 
-# Set up the features using VectorAssembler
+# Set up the features using VectorAssembler - removing fare_per_mile and fare_per_min since they dominate the model
 feature_cols = [
     "PULocationID", "DOLocationID", "PU_borough_index", "DO_borough_index",
-    "license_index", "trip_miles", "trip_time", "base_passenger_fare",
-    "tips", "driver_pay", "fare_per_mile", "fare_per_min", "driver_pay_ratio",
+    "license_index", "trip_time",
     "has_toll", "has_airport_fee", "has_congestion_surcharge",
     "hour_of_day", "day_of_week", "month", "is_weekend",
     "wait_time_secs", "demand_zscore", "high_demand"
 ]
+# removed fare_per_min and fare_per_mile and added validation testing in case we want to tune hyperparameters.
+# removed base_passenger_fare, driver_pay, driver_pay_ratio, tips, trips_miles
+
 
 assembler = VectorAssembler(inputCols=feature_cols, outputCol="features", handleInvalid="skip")
 df_assembled = assembler.transform(df_model)
 
 # Train, test, split
-train_df, test_df = df_assembled.randomSplit([0.8, 0.2], seed=42)
+#train_df, test_df = df_assembled.randomSplit([0.8, 0.2], seed=42)
+
+# Split into train, validation, test
+train_df, remaining_df = df_assembled.randomSplit([0.70, 0.30], seed=42)
+val_df, test_df = remaining_df.randomSplit([0.50, 0.50], seed=42)
+
 
 # Persist both splits so they don't get recomputed for evaluation
+#train_df.persist(StorageLevel.DISK_ONLY)
+#test_df.persist(StorageLevel.DISK_ONLY)
+#train_df.count()
+#test_df.count()
+
 train_df.persist(StorageLevel.DISK_ONLY)
+val_df.persist(StorageLevel.DISK_ONLY)
 test_df.persist(StorageLevel.DISK_ONLY)
 train_df.count()
+val_df.count()
 test_df.count()
 
 # Train the model
@@ -1049,9 +1068,24 @@ dt = DecisionTreeClassifier(
 
 dt_model = dt.fit(train_df)
 
+# Get the active Spark Context and URL
+try:
+    sc = spark.sparkContext
+    url = f"{sc.uiWebUrl}/api/v1/applications/{sc.applicationId}/executors"
+    
+    # Fetch the executor data from the API
+    response = requests.get(url)
+    executors = response.json()
+    
+    # Format into a readable DataFrame
+    df_exec = pd.DataFrame(executors)[['id', 'totalCores', 'maxMemory', 'activeTasks', 'isActive']]
+    df_exec['maxMemory_GB'] = (df_exec['maxMemory'] / (1024**3)).round(2)
+    print(df_exec)
+except Exception as e:
+    print(f"Could not fetch executor info: {e}")
 
 # Model evaluation
-predictions = dt_model.transform(test_df)
+#predictions = dt_model.transform(test_df)
 
 # AUC-ROC
 binary_evaluator = BinaryClassificationEvaluator(
@@ -1059,8 +1093,26 @@ binary_evaluator = BinaryClassificationEvaluator(
     rawPredictionCol="rawPrediction",
     metricName="areaUnderROC"
 )
-auc = binary_evaluator.evaluate(predictions)
-print(f"AUC-ROC: {auc:.4f}")
+#auc = binary_evaluator.evaluate(predictions)
+#print(f"AUC-ROC: {auc:.4f}")
+
+# Evaluate on training set
+train_predictions = dt_model.transform(train_df)
+train_auc = binary_evaluator.evaluate(train_predictions)
+print(f"Training AUC-ROC: {train_auc:.4f}")
+
+# Tune hyperparameters using val_df
+val_predictions = dt_model.transform(val_df)
+val_auc = binary_evaluator.evaluate(val_predictions)
+print(f"Validation AUC-ROC: {val_auc:.4f}")
+
+print(f"Gap: {train_auc - val_auc:.4f}")
+
+# Only evaluate on test_df once model parameters are finalized
+#test_predictions = dt_model.transform(test_df)
+#test_auc = binary_evaluator.evaluate(test_predictions)
+#print(f"Test AUC-ROC: {test_auc:.4f}")
+
 
 # Accuracy, F1, Precision, Recall
 multi_evaluator = MulticlassClassificationEvaluator(
@@ -1069,7 +1121,7 @@ multi_evaluator = MulticlassClassificationEvaluator(
 )
 
 for metric in ["accuracy", "f1", "weightedPrecision", "weightedRecall"]:
-    score = multi_evaluator.evaluate(predictions, {multi_evaluator.metricName: metric})
+    score = multi_evaluator.evaluate(val_predictions, {multi_evaluator.metricName: metric})
     print(f"{metric}: {score:.4f}")
 
 # Feature importance

@@ -221,3 +221,4 @@ __marimo__/
 # Adding Data Folder
 taxi_data/
 spark_temp/
+df_model_parquet/
