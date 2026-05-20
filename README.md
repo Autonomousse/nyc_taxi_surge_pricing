@@ -429,7 +429,36 @@ weightedRecall: 0.7089
 
 ## 6.4 Fourth Run with Decision Tree Classifier
 
-Attempting to run the DTC with maxDepth 15 was not successful at the current time. This section will be updated once errors no longer persist. But in theory, have more depth for the trees would potentially allow more features to have more importance so we may see the values from the last run shift and the models predictive capabilities increase slightly. However, the caveat here is that the more we increase depth, the more the model tends to overfit, so we shouldn't continue to increase the depth even if performance improves.
+```
+Training AUC-ROC: 0.6620
+Validation AUC-ROC: 0.6620
+Gap: 0.0000
+accuracy: 0.7214
+f1: 0.7287
+weightedPrecision: 0.7719
+weightedRecall: 0.7214
+```
+
+| Feature Index | Feature                  | Importance |
+| ------------- | ------------------------ | ---------: |
+|            5  | trip_time                | 0.66878080 |
+|            3  | DO_borough_index         | 0.10675740 |
+|            2  | PU_borough_index         | 0.05785043 |
+|            1  | DOLocationID             | 0.05322985 |
+|            0  | PULocationID             | 0.03290707 |
+|            6  | has_toll                 | 0.01586536 |
+|            14 | demand_zscore            | 0.01573175 |
+|            7  | has_airport_fee          | 0.01535446 |
+|            8  | has_congestion_surcharge | 0.00917519 |
+|            9  | hour_of_day              | 0.00834558 |
+|            13 | wait_time_secs           | 0.00793096 |
+|            11 | month                    | 0.00404618 |
+|            4  | license_index            | 0.00249908 |
+|            12 | is_weekend               | 0.00097381 |
+|            10 | day_of_week              | 0.00055206 |
+|            15 | high_demand              | 0.00000005 |
+
+This run we set maxDepth = 15 and the results are indicating that the features don't have enough signal for a single Decision Tree to learn from. The AUC for this run is lower than the last run which means the tree is finding splits that work on the training data but don't generalize well. There is some slight improvement in feature diversity but nothing significant enough to warrant further hyperparameter tuning for a DTC. We should proceed further with a Random Forest Classifier or LightGBM.
 
 ## 6.5 Conclusion and Next Steps
 
