@@ -287,7 +287,7 @@ Based on the result, we can see that the 99.9th and 99.99th percentile values ar
 
 After filtering the data and completing feature engineering to derive the necessary columns, we are left with 1,382,815,732 rows which means we lost about 9.1% of our overall data. This is not really an issue since we still have a generous amount of data left.
 
-# 6 Decision Tree Classifier
+# 6 First Model - Decision Tree Classifier
 ## 6.1 Model Setup, Training, and Testing
 The first model we will use is a **Decision Tree Classifier (DTC)** since it is easy to decompose and understand if we need to dig into the individual nodes. Hyperparameter tuning is also not as complex as some other models and this model is supported by PySpark.
 
@@ -395,14 +395,51 @@ The model still has strong results, we only lost about 3.5% AUC by removing the 
 
 Before we attempt to tune the hyperparamenters, we will run it once more. This time we will capture the training and validation scores to check for overfitting and we will remove all of the pricing adjacent features which include `trip_miles`, `base_passenger_fare`, `driver_pay_ratio`, `driver_pay`, as well as `tips` since it is often a percentage of total fare. This will show us whether or not the contextual signals actually are able to predict surge.
 
-## 6.3 Second Run with Decision Tree Classifier
+## 6.3 Third Run with Decision Tree Classifier
+Now we are seeing that the model is learning that longer trips mean surge, which still seems oversimplified. With the Training and Validation AUC scores being the same, it tells us that the model may be underfitting and that with a maxDepth of 10, there isn't enough complexity in the model to achieve more feature interaction. `demand_zscore` is now showing up with some feature importance so the derived signal is meaningful when it's not crowded out by pricing signals. `high_demand` might be too aggressive of a derivation being set at 1.5 standard deviations or above. At this stage we can either allow a higher maxDepth for more complexity and feature interactions, introduce `driver_pay_ratio` back into the mix since that is capturing platform behavior more than pricing but still adjacent, or use a Random Forest Classifier (RFC) with a set number of trees and increased maxDepth try to find a better mix of features for predicing surge. The Random Forest approach may be the better choice since we've lost a meaningful amount of predictive value in this run but it will also take longer to run so we will first try changing maxDepth to 15 to see if we can increase model performance on DTC.
 
+```
+Training AUC-ROC: 0.6898
+Validation AUC-ROC: 0.6898
+Gap: 0.0000
+accuracy: 0.7089
+f1: 0.7164
+weightedPrecision: 0.7620
+weightedRecall: 0.7089
+```
 
-## 6.4 Conclusion and Next Steps
+| Feature Index | Feature                  | Importance |
+| ------------- | ------------------------ | ---------- |
+|             5 | trip_time                |   0.733820 |
+|             3 | DO_borough_index         |   0.112718 |
+|             2 | PU_borough_index         |   0.056082 |
+|             1 | DOLocationID             |   0.026920 |
+|             6 | has_toll                 |   0.017058 |
+|            14 | demand_zscore            |   0.013085 |
+|             7 | has_airport_fee          |   0.012257 |
+|             0 | PULocationID             |   0.012117 |
+|            13 | wait_time_secs           |   0.006090 |
+|             8 | has_congestion_surcharge |   0.005298 |
+|            11 | month                    |   0.002422 |
+|             9 | hour_of_day              |   0.001371 |
+|             4 | license_index            |   0.000749 |
+|            10 | day_of_week              |   0.000015 |
+|            12 | is_weekend               |   0.000000 |
+|            15 | high_demand              |   0.000000 |
 
-discuss training vs validation score and training vs testing score
-conclusion, what can be done to improve further
+## 6.4 Fourth Run with Decision Tree Classifier
 
-The total runtime for the entire pipeline was about 3 hours and 20 minutes. This was possible because of task parallelization and having several executors running at once to process the data, build, and evaluate the models. Trying to do this on a laptop or computer would have crashed with 1.38 billion rows of data. An additional step that will be implemented is writing the cleaned dataset to a parquet file prior to training the model, so that if the model training fails, we won't need to process the data again and can start by reading the cleaned data. This will also be helpful when we use Ray Train to run a LightGBM model a bit later on.
+Attempting to run the DTC with maxDepth 15 was not successful at the current time. This section will be updated once errors no longer persist. But in theory, have more depth for the trees would potentially allow more features to have more importance so we may see the values from the last run shift and the models predictive capabilities increase slightly. However, the caveat here is that the more we increase depth, the more the model tends to overfit, so we shouldn't continue to increase the depth even if performance improves.
 
-Moving forward, we will run a LightGBM (LGBM) model as our next model. DTC creates a single tree with sequential splits, which is a weakness because it only has single model. A single bad split would result in issues all the way down the tree. It is also prone to overfitting at higher depths. With LGBM, similar to XGBoost (XGB) but uses leaf wise growth instead of level wise growth, we have a boosted ensemble method which builds trees sequentially, specifically focusing on picking the most impactful leaf to split. It also has sequential boosting (each model corrects the previous models errors), L1 and L2 regularization, native missing value handling, feature interaction detection which is a key aspect that DTC lacks, and gradient optimization. LGBM is also designed for larger datasets so it will train faster than XGB but with similar results. Setting the `num_leaves` parameter will be important so we do not overfit because leaf wise growth can overfit easily on smaller datasets. However, since this dataset is fairly large, it won't be as much of an issue but still good to keep in mind.
+## 6.5 Conclusion and Next Steps
+
+After removing all of the pricing signals which were dominating the DTC, the contextual features were still mostly dominated by `trip_time` but we saw some of our derived demand signals coming into play. At this stage we will move on to using Ray Train and LightGBM for more complexity without reintroducing the pricing signals back into the mix. While our model did perform well with the pricing signals, we want to test if contextual features can also provide strong predictive power. If we are successful then we can potentially drop `trip_time` and have a model capable of predicting surge pricing based on features that wouldn't require a user to even check the cost but simply know the locations, hour of day, and day of week to know if they will be charged more for their trip.
+
+The total runtime for the entire pipeline was about 3-4 hours. This was possible because of task parallelization and having several executors running at once to process the data, build, and evaluate the models. Trying to do this on a laptop or computer would have crashed with 1.38 billion rows of data. An additional step that will be implemented is writing the cleaned dataset to a parquet file prior to training the models, so that if the model training fails, we won't need to process the data again and can start by reading the cleaned data. This will also be helpful when we use Ray Train to run a LightGBM model a bit later on.
+
+A screenshot of the driver and total memory after running model training (left 1 core and some RAM for overhead):
+![spark_screenshot](visualizations/spark_train.png)
+
+Moving forward, we will run a LightGBM (LGBM) model as our next model using Ray Train, which is optimized for machine learning algorithms. DTC creates a single tree with sequential splits, which is a weakness because it only has single model. A single bad split would result in issues all the way down the tree. It is also prone to overfitting at higher depths. With LGBM, similar to XGBoost (XGB) but uses leaf wise growth instead of level wise growth, we have a boosted ensemble method which builds trees sequentially, specifically focusing on picking the most impactful leaf to split. It also has sequential boosting (each model corrects the previous models errors), L1 and L2 regularization, native missing value handling, feature interaction detection which is a key aspect that DTC lacks, and gradient optimization. LGBM is also designed for larger datasets so it will train faster than XGB but with similar results. Setting the `num_leaves` parameter will be important so we do not overfit because leaf wise growth can overfit easily on smaller datasets. However, since this dataset is fairly large, it won't be as much of an issue but still good to keep in mind.
+
+We will also be using dimensionality reduction and testing our second model with both a full set of features as well as the suggested features with dimensionality reduction. It will be interesting to see what features are left after reduction and compare them to the set of features we manually made adjustments for when training the DTC.

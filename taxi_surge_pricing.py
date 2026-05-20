@@ -23,7 +23,7 @@ from pyspark.sql import functions as F
 #from pyspark.sql import Window
 from pyspark.ml.feature import StringIndexer
 from pyspark import StorageLevel
-from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.feature import VectorAssembler, VectorIndexer
 from pyspark.ml.classification import DecisionTreeClassifier
 from pyspark.ml.evaluation import BinaryClassificationEvaluator, MulticlassClassificationEvaluator
 
@@ -134,7 +134,6 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 
-
 # # Extract, Transform, and Load data into a Spark Dataframe
 
 # In[4]:
@@ -152,6 +151,8 @@ data_folder = f'{base_path}{folder_name}'
 
 # If the folder doesn't exist, create it.
 os.makedirs(data_folder, exist_ok=True)
+
+'''
 
 # -----------------------------------------------------------------------------------
 # Function to generate the date structure and range for the files we want to download
@@ -400,7 +401,7 @@ except Exception as e:
     print(f"Could not fetch executor info: {e}")
 
 # removing this section since it's already done in the notebook, saves processing time.
-'''
+
 
 
 # # Number of Observations
@@ -683,7 +684,7 @@ df.approxQuantile(
 )
 
 
-'''
+
 
 
 # The values for the 99th percentile indicate that we can use the following caps:
@@ -711,7 +712,7 @@ df_filtered = df.filter(
 
 # In[19]:
 
-'''
+
 
 # Checking to see if the values are more reasonable
 df_filtered.describe('trip_miles', 'trip_time', 'base_passenger_fare', 'tips', 'driver_pay').show(vertical=True)
@@ -731,7 +732,7 @@ df_filtered.approxQuantile(
 
 # In[21]:
 
-'''
+
 
 # We can set a cap at 20 for tips since we see a similar pattern of the values jumping to the max value as before.
 df_filtered = df_filtered.filter(F.col("tips") <= 20)
@@ -776,7 +777,7 @@ df_filtered = df_filtered.withColumn("hour_of_day", F.hour("request_datetime")) 
 
 # In[25]:
 
-'''
+
 
 # Check to see if fare_per_mile is valid
 df_filtered.describe('fare_per_mile').show(vertical=True)
@@ -796,7 +797,7 @@ df_filtered.approxQuantile(
 
 # In[27]:
 
-'''
+
 
 
 # Set the min amount to $2/mile and the max to $25/mile
@@ -809,10 +810,10 @@ df_filtered.count()
 
 # In[28]:
 
-'''
+
 # Check to see if base_passenger_fare is valid
 df_filtered.describe('base_passenger_fare').show(vertical=True)
-'''
+
 
 # In[29]:
 
@@ -969,7 +970,7 @@ df_model.persist(StorageLevel.DISK_ONLY)
 
 # In[ ]:
 
-'''
+
 
 # Checking for class imbalance, we want there to be enough surge labels so that we have a balanced data set
 counts = df_model.groupBy("is_surge").count().collect()
@@ -978,7 +979,7 @@ total_rows = sum(row["count"] for row in counts)
 for row in counts:
     print(f"is_surge={row['is_surge']}: {row['count']:,} ({round(row['count']/total_rows*100, 2)}%)")
 
-'''
+
 
 # Filtering out nulls for is_surge
 df_model = df_model.filter(F.col("is_surge").isNotNull())
@@ -992,6 +993,15 @@ print("df_model written to parquet")
 
 # In[ ]:
 
+'''
+
+
+
+parquet_path = f'/expanse/lustre/projects/uci157/{user}/nyc_taxi_surge_pricing/df_model_parquet'
+# read from the parquet files:
+print("Reading df_model from parquet...")
+df_model = spark.read.parquet(parquet_path)
+print(f"Loaded {df_model.count():,} rows from parquet")
 
 # Get counts dynamically
 counts = df_model.groupBy("is_surge").count().collect()
@@ -1048,24 +1058,44 @@ val_df, test_df = remaining_df.randomSplit([0.50, 0.50], seed=42)
 #test_df.persist(StorageLevel.DISK_ONLY)
 #train_df.count()
 #test_df.count()
+'''
+####### indexing large categoricals
+indexer = VectorIndexer(
+    inputCol="features",
+    outputCol="indexedFeatures",
+    maxCategories=300  # safe for PULocationID/DOLocationID
+)
+
+indexer_model = indexer.fit(train_df)
+
+train_df = indexer_model.transform(train_df)
+val_df = indexer_model.transform(val_df)
+test_df = indexer_model.transform(test_df)
+#######
+
+print('Indexing complete...')
+'''
+
 
 train_df.persist(StorageLevel.DISK_ONLY)
 val_df.persist(StorageLevel.DISK_ONLY)
-test_df.persist(StorageLevel.DISK_ONLY)
+test_df.persist(StorageLevel.MEMORY_AND_DISK)
 train_df.count()
 val_df.count()
 test_df.count()
+print("Persist complete...")
 
 # Train the model
 dt = DecisionTreeClassifier(
     labelCol="is_surge",
     featuresCol="features",
     weightCol="class_weight",
-    maxDepth=10,          # tune this, default is 5
+    maxDepth=15,          # tune this, default is 5
     maxBins=265,          # may need to tune this, 512 to safely handle all categorical features like location ID
     seed=42
 )
 
+print('Training model...')
 dt_model = dt.fit(train_df)
 
 # Get the active Spark Context and URL
