@@ -1,12 +1,17 @@
-# NYC Taxi Surge Pricing Detection
-The topic of dynamic pricing has made its way into headlines with reasonable backlash. Surge pricing is a form of dynamic pricing aimed at increasing the price of a service, such as transportation, during times of high demand. Companies such as Uber and Lyft employ these tactics during peak travel periods, often costing consumers far more than they expected. Here we will use the New York City (NYC) Taxi and Limousine Commission (TLC) trip record data to predict when surge pricing occurs. As surge pricing is not part of the dataset itself, we will create our own measure of surge pricing to utilize for this analysis. If we can predict when surge pricing occurs, consumers may opt use alternative modes of transportation or change their travel times to avoid excessive pricing.
+# Table of Contents
+[Introduction](#introduction)
 
-The specific datasets used in this study are from the [NYC Government](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) website, within the time period of February 2019 – February 2026 (the current latest dataset available). Only the High Volume For-Hire Vehicle trips data is being used, a category created specifically for companies that employ drivers and exceed 10,000 trips per day. The datasets contain information about the operating business, dates, times, location, costs, tips, number of passengers, and a few other features. The combined dataset is about 35.6 GB in size (in parquet format) and split into individual files by month with tens of millions of rows in each file. While this may be possible to run on a laptop with libraries such as Dask, it will still take a sizeable amount of time and effort to complete such a task with no reassurance for any failures during runtime. Distributed processing is necessary as it can spread the tasks across multiple computers resulting in faster and efficient processing while also allowing for scalability and fault tolerance.
+# Introduction - NYC Taxi Surge Pricing Detection {#introduction}
+The topic of dynamic pricing has made its way into headlines with reasonable backlash. Surge pricing is a form of dynamic pricing aimed at increasing the price of a service, such as transportation, during times of high demand. Companies such as Uber and Lyft employ these tactics during peak travel periods, often costing consumers far more than they expected. Here we will use the New York City (NYC) Taxi and Limousine Commission (TLC) trip record data to predict when surge pricing occurs. As surge pricing is not part of the dataset itself, we will create our own measure of surge pricing to utilize for this analysis. If we can predict when surge pricing occurs, consumers may opt to use alternative modes of transportation or change their travel times to avoid excessive pricing.
 
-# 1. Setup and Configuration
+The specific datasets used in this study are from the [NYC Government](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) website, within the time period of February 2019 – February 2026 (the current latest dataset available). Only the High Volume For-Hire Vehicle trips data is being used, a category created specifically for companies that employ drivers and exceed 10,000 trips per day. The datasets contain information about the operating platform, dates, times, location, fares, tips, number of passengers, and a few other features. The combined dataset is about 35.6 GB in size (in parquet format) and split into individual files by month with tens of millions of rows in each file. While this may be possible to run on a laptop with libraries such as Dask, it will still take a sizeable amount of time and effort to complete such a task with no reassurance for any failures during runtime. Distributed processing is necessary as it can spread the tasks across multiple computers resulting in faster and efficient processing while also allowing for scalability and fault tolerance. Therefore, SDSC Expanse resources will be utilized for this analysis. 
+
+Spark and Ray frameworks, which are optimized for distributed computing, will be the backbones of the pipeline. Spark specializes in data parallelism when it comes to ETL and SQL operations for structured or semi-structured data and Ray specializes in task parallelism for Machine Learning (ML). A combination of both in their respective areas of specialization will result in an optimized pipeline.
+
+## 1. Setup and Configuration
 Documentation of the working environment and data dictionary.
 
-## 1.1 File Structure
+### 1.1 File Structure
 Within the SDSC Environment, the file structure is denoted below:
 
 ```
@@ -14,12 +19,12 @@ Within the SDSC Environment, the file structure is denoted below:
 |--- taxi_data/                        # parquet data files - not uploaded to Github
 |--- taxi_zone/                        # CSV file containing zone lookup values - not uploaded to Github
 |--- visualizations/                   # visualizations generated for analysis
-|--- taxi_surge_pricing.ipynb          # notebook with code for analysis
+|--- taxi_surge_pricing.ipynb          # notebook with code for exploratory data analysis, ETL, preprocessing, ad hoc analysis
 ```
 > [!TIP]
-> The data and visualization folders will be created automatically if you run the Jupyter Notebook.
+> The data and visualization folders will be created automatically with the included Jupyter Notebook, taxi_surge_pricing.ipynb
 
-## 1.2 SDSC Expanse and Spark Session Builder
+### 1.2 SDSC Expanse and Spark Session Builder
 [SDSC Expanse](https://www.sdsc.edu/systems/expanse/) is a high performance computing (HPC) cluster with an impressive system architecture able to handle high-throughput computing and even provide GPU level support. For our setup we will be initializing the cluster with 8 cores (nodes) and 128 GB of memory (per node). 128 GB of memory might seem unwarranted for a data set that is ~35 GB but it is necessary since we will be doing computations, visualizations, and running ML algorithms for this analysis.
 
 Once logged into SDSC Expanse, we launch a JupyterLab session with the provided cluster information above (8 cores, 128 GB of memory). As this is a shared cluster, there may be a queue before the session becomes available. After it launches, open a Jupyter Notebook and initialize a Spark session as seen in the [Spark Session Variables and Build](https://github.com/Autonomousse/nyc_taxi_surge_pricing/blob/master/taxi_surge_pricing.ipynb#Spark-Session-Variables-and-Build) cell. A breakdown of the calculations and corresponding values are below:
@@ -52,7 +57,7 @@ spark = SparkSession.builder \
 .getOrCreate()
 ```
 > [!NOTE]
-> The driver doesn't need much memory as it processes minimal data from aggregations. For visualizations or ML algorithms, may increase to 4 GB.
+> The driver doesn't need much memory as it processes minimal data from aggregations. For visualizations or ML algorithms, may increase to 4+ GB.
 
 > [!IMPORTANT]
 > ```from pyspark.sql import SparkSession # import before initializing spark session builder```
@@ -61,7 +66,7 @@ spark = SparkSession.builder \
 A screenshot of the driver and total memory after loading in the data:
 ![spark_screenshot](visualizations/spark_screenshot.PNG)
 
-## 1.3 Running the Jupyter Notebook
+### 1.3 Running the Jupyter Notebook
 To run the notebook, the following criteria must be met (or workarounds must be created by the user):
 
 1. Create a .env file in the same directory as the notebook and enter the following:
@@ -74,17 +79,19 @@ To run the notebook, the following criteria must be met (or workarounds must be 
 > [!WARNING]
 > Please review the dependencies at the top of the notebook prior to running. Some less common dependencies have been added as an install, more may be needed depending on your environment.
 
-# 2. Data Source and Data Dictionary
+> [!IMPORTANT] For the Python files we use SLURM commands to submit the scripts to the compute nodes with the appropriate commands and paths for our environment. A detailed breakdown will not be provided here as this is environment and user dependent.
 
-## 2.1 Data Source
+## 2. Data Source and Data Dictionary
+
+### 2.1 Data Source
 The entire data set can be found here: [NYC Government](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page).
 - The specific files we are using are the **High Volume For-Hire Vehicle Trip Records** starting from February 2019 to February 2026 (inclusive). These files are available in parquet format, which is the preferred format for analyzing large sets of data.
 - The Taxi Zone Maps and Lookup Table in CSV format will also be utilized for this analysis.
-- A data dictionary is also provided on the website and here.
+- A data dictionary is also provided on the website and below (please see the official website for the latest information).
 > [!TIP]
 > If using the provided notebook, all of the files will be downloaded automatically.
   
-## 2.2 Data Dictionary
+### 2.2 Data Dictionary
 
 | Field Name                 | Description                                                                                          |
 |----------------------------|------------------------------------------------------------------------------------------------------|
@@ -114,7 +121,7 @@ The entire data set can be found here: [NYC Government](https://www.nyc.gov/site
 | **wav_match_flag**         | Did the trip occur in a wheelchair-accessible vehicle (WAV)? (Y/N)                                   |
 | **cbd_congestion_fee**     | Per-trip charge for MTA's Congestion Relief Zone starting Jan. 5, 2025.                              |
 
-## 2.3 Distribution of the Data
+### 2.3 Distribution of the Data
 
 These are the columns that we will be using for our analysis:
 
@@ -152,6 +159,104 @@ Here we can see some quick summary stats of the data:
 | **stddev** | 5.7233      | 830.2167   | 20.8419             | 3.6747     | 0.6331     | 1.7166     | 1.3173               | 0.6790      | 3.0405     | 16.1434    |
 | **min**    | 0.0         | 0          | -1969.5900          | 0.0        | 0.0        | -3.0000    | 0.0                  | 0.0         | 0.0        | -6867.2800 |
 | **max**    | 5380.7800   | 240764     | 8157.7400           | 1720.0     | 213.0200   | 724.0800   | 13.7500              | 10.0        | 1000.0     | 4894.6200  |
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # 3. Exploratory Data Analysis and Visualizations
 
@@ -466,9 +571,306 @@ After removing all of the pricing signals which were dominating the DTC, the con
 
 The total runtime for the entire pipeline was about 3-4 hours. This was possible because of task parallelization and having several executors running at once to process the data, build, and evaluate the models. Trying to do this on a laptop or computer would have crashed with 1.38 billion rows of data. An additional step that will be implemented is writing the cleaned dataset to a parquet file prior to training the models, so that if the model training fails, we won't need to process the data again and can start by reading the cleaned data. This will also be helpful when we use Ray Train to run a LightGBM model a bit later on.
 
-A screenshot of the driver and total memory after running model training (left 1 core and some RAM for overhead):
+A screenshot of the executors and total memory after running model training (left 1 core and some RAM for overhead):
 ![spark_screenshot](visualizations/spark_train.png)
 
 Moving forward, we will run a LightGBM (LGBM) model as our next model using Ray Train, which is optimized for machine learning algorithms. DTC creates a single tree with sequential splits, which is a weakness because it only has single model. A single bad split would result in issues all the way down the tree. It is also prone to overfitting at higher depths. With LGBM, similar to XGBoost (XGB) but uses leaf wise growth instead of level wise growth, we have a boosted ensemble method which builds trees sequentially, specifically focusing on picking the most impactful leaf to split. It also has sequential boosting (each model corrects the previous models errors), L1 and L2 regularization, native missing value handling, feature interaction detection which is a key aspect that DTC lacks, and gradient optimization. LGBM is also designed for larger datasets so it will train faster than XGB but with similar results. Setting the `num_leaves` parameter will be important so we do not overfit because leaf wise growth can overfit easily on smaller datasets. However, since this dataset is fairly large, it won't be as much of an issue but still good to keep in mind.
 
 We will also be using dimensionality reduction and testing our second model with both a full set of features as well as the suggested features with dimensionality reduction. It will be interesting to see what features are left after reduction and compare them to the set of features we manually made adjustments for when training the DTC.
+
+# 7 Speedup Testing
+Speedup is defined as the following formula:
+
+$$\text{Speedup}(n) = \frac{T_1}{T_n}$$
+
+Where:
+$T_1$ = Execution time with 1 executor
+$T_n$ = Execution time with n executors
+
+Efficiency is then defined as:
+
+$$\text{Efficiency}(n) = \frac{\text{Speedup}(n)}{n} = \frac{T_1}{n \times T_n}$$
+
+Parallelizable Fraction can be calculated by rearranging Amdahl's Law:
+
+$$p = \frac{n \times (S - 1)}{S \times (n - 1)}$$
+
+Where:
+p = parallelizable fraction
+S = measured speedup
+n = number of executors
+
+We are aiming to have 70% or more efficiency which means we have good parallelization. Anything below 70% has room for improvement. It is important to measure speedup and efficiency for insight into which part of your pipeline might be backed up or increasing costs unintentionally.
+
+We will first run our operation using a single executor, followed by 3 and 7 executors to see the speedup and efficiency outcomes. For each run, we will discard the first run and then record the average of the remaining runs because Spark runs on JVM and JIT compilation significantly slows down the first execution.
+
+Performance was measured on the entire feature engineering pipeline which includes loading the data, preprocessing, and feature engineering. The pipeline ends with a .count() call to instantiate a calculation. This setup was run across all 3 executor configurations on 1% of the entire dataset which is ~15 million rows with an average of 3 runs. Trying to run 1.5 billion rows through the pipeline with a single executor would take far too long to process so we sampled the same data (set a seed) across all 3 runs.
+
+The speedup testing code can be found here: [Speedup Testing](https://github.com/Autonomousse/nyc_taxi_surge_pricing/blob/master/speedup_testing.py)
+The calculations for speedup, efficiency, parallelizable fraction, and visualization can be found here: [Speedup/Efficiency Testing and Visualization](https://github.com/Autonomousse/nyc_taxi_surge_pricing/blob/master/taxi_surge_pricing.ipynb#Speedup/Efficiency-Testing-and-Visualization)
+
+| Executors | Time (sec) | Speedup | Efficiency | Notes                       |
+|-----------|------------|---------|------------|-----------------------------|
+| 1         | 1852.12    | 1.00x   | 100%       | Perfect (theoretical ideal) |
+| 3         | 708.27     | 2.61x   | 87%        | Good parallelization        |
+| 7         | 365.86     | 5.06x   | 72%        | Good parallelization > 70%  |
+
+**Analysis:**
+- Achieved 5.06x speedup with 7 executors (72% efficiency).
+- Efficiency is dropping when adding executors, this might suggest overhead costs increasing.
+- Based on measurements, estimated parallelizable fraction: ~94%.
+- Amdahl's law limits max speedup due to ~6% sequential code.
+- 7 executors is still performing well so we can continue using our current setup.
+
+![speedup_analysis](visualizations/speedup_analysis.png)
+
+# 8 Principal Component Analysis (PCA)
+PCA will be used for dimensionality reduction on our feature set. PCA transforms the data into new features called principal components which are calculated from eigenvectors (directions) and eigenvalues(importance) from a covariance matrix. The top components with the highest eigenvalues are then selected. This method essentially prioritizes capturing the directions where the data varies the most since that is where the most useful information lies. By using PCA, we can reduce the number of features (dimensions) while keeping the important patterns captured.
+
+For our analysis, the full 23 feature set will be included, not just the 16 features we manually selected when running DTC. To run PCA, we first scaled our features so that components won't be dominated by features with larger ranges and then standardized the data by making each feature have a mean of 0 and a standard deviation of 1. Below we can see each of the components and the variance explained by each.
+
+| Principal Component | Explained Variance | Cumulative Variance |
+|---------------------|--------------------|---------------------|
+| PC1                 | 0.1971             | 0.1971              |
+| PC2                 | 0.1103             | 0.3074              |
+| PC3                 | 0.0783             | 0.3857              |
+| PC4                 | 0.0714             | 0.4572              |
+| PC5                 | 0.0505             | 0.5076              |
+| PC6                 | 0.0479             | 0.5555              |
+| PC7                 | 0.0465             | 0.6020              |
+| PC8                 | 0.0452             | 0.6471              |
+| PC9                 | 0.0442             | 0.6913              |
+| PC10                | 0.0415             | 0.7328              |
+| PC11                | 0.0391             | 0.7719              |
+| PC12                | 0.0385             | 0.8104              |
+| PC13                | 0.0371             | 0.8475              |
+| PC14                | 0.0301             | 0.8777              |
+| PC15                | 0.0282             | 0.9059              |
+| PC16                | 0.0236             | 0.9295              |
+| PC17                | 0.0187             | 0.9482              |
+| PC18                | 0.0174             | 0.9656              |
+| PC19                | 0.0146             | 0.9802              |
+| PC20                | 0.0133             | 0.9934              |
+| PC21                | 0.0041             | 0.9975              |
+| PC22                | 0.0019             | 0.9994              |
+| PC23                | 0.0006             | 1.0000              |
+
+![pca_explained_variance](visualizations/pca_explained_variance.png)
+
+The chart is a visual representation of the table and we can see that about 95% of the variance is captured by 18 components. This suggests that the features are not highly redundant and that they each contribute relatively unique and independent information. If 95% variance was captured in 8 or less components then features would be more correlated and there would be a sharp elbow instead of a steady gradual decay across components. This also suggests that the engineered features are also diverse.
+
+Below we see the top contributing features for the top 5 components:
+
+```
+Top feature contributions per component:
+
+ --- Mostly pricing signals ---
+PC1 (explains 19.7%):
+  driver_pay: 0.4483
+  trip_miles: 0.4409
+  base_passenger_fare: 0.4262
+  trip_time: 0.4167
+  has_toll: 0.2935
+
+ --- Mostly location signals ---
+PC2 (explains 11.0%):
+  has_congestion_surcharge: 0.4942
+  PU_borough_index: 0.4743
+  DO_borough_index: 0.4253
+  fare_per_mile: 0.3494
+  fare_per_min: 0.2871
+
+ --- Mostly demand signals ---
+PC3 (explains 7.8%):
+  fare_per_min: 0.5092
+  driver_pay_ratio: 0.4043
+  demand_zscore: 0.3420
+  high_demand: 0.3393
+  DO_borough_index: 0.2871
+
+ --- Mostly demand signals ---
+PC4 (explains 7.1%):
+  demand_zscore: 0.6089
+  high_demand: 0.6064
+  driver_pay_ratio: 0.2620
+  fare_per_min: 0.2588
+  DO_borough_index: 0.1985
+
+ --- Mostly location signals ---
+PC5 (explains 5.0%):
+  DOLocationID: 0.6098
+  PULocationID: 0.5804
+  license_index: 0.2634
+  wait_time_secs: 0.2441
+  hour_of_day: 0.1950
+```
+
+We will use the top 18 components to train an LGBM model and compare it with all 23 features as well as our 16 manually selected features.
+
+# 9 LightGBM (LGBM)
+For LGBM model, we will start by using 10% of our dataset. That still equates to ~138 million rows for training, validation, and testing with a maximum of 23 features. We can increase the amount of data used if it looks like our model is not generalizing well or underfitting but this should give us a good starting point.
+
+## 9.1 LGBM + Full Feature Set (23 features)
+```
+lgbm_full_features Results:
+  Best iteration:     500
+  Metric               Train        Validation     Test
+  ---------------------------------------------------------
+  AUC-ROC              0.9979       0.9979         0.9979 
+  Accuracy             0.9731       0.9730         0.9730
+  F1 (weighted)        0.9733       0.9732         0.9733
+
+
+  Confusion Matrix:
+                       Predicted No Surge  Predicted Surge
+  Actual No Surge      14,247,232 (TN)        455,582 (FP)
+  Actual Surge            103,723 (FN)      5,936,019 (TP)
+
+
+  FP Rate: 0.0310
+  FN Rate: 0.0172
+  Precision: 0.9287
+  Recall:    0.9828
+
+
+  Classification Report:
+              precision    recall  f1-score   support
+
+    No Surge       0.99      0.97      0.98  14702814
+       Surge       0.93      0.98      0.96   6039742
+
+    accuracy                           0.97  20742556
+   macro avg       0.96      0.98      0.97  20742556
+weighted avg       0.97      0.97      0.97  20742556
+```
+![confusion_matrix_Full_Features](visualizations/confusion_matrix_Full_Features.png)
+The full feature set has strong results, but this was expected based on the DTC model with full features having remarkable results as well. With a precision of 0.93 and recall of 0.98 on the surge class, the model is rarely missing surge events. The higher recall is due to the class weights and is the better tradeoff since missing surge detection is more costly than a false alarm; would cost the consumer more if they were utilizing a tool that predicted surge conditions. Only about 3.1% of the trips were incorrectly flagged as surge, which is acceptable with the overall performance for this model.
+
+## 9.2 LGBM + Manual Feature Set (16 features)
+```
+lgbm_manual_features Results:
+  Best iteration:     500
+  Metric               Train        Validation     Test  
+  ---------------------------------------------------------
+  AUC-ROC              0.8642       0.8642         0.8642
+  Accuracy             0.7735       0.7734         0.7735
+  F1 (weighted)        0.7819       0.7818         0.7819
+
+
+  Confusion Matrix:
+                       Predicted No Surge  Predicted Surge
+  Actual No Surge      11,213,589 (TN)      3,486,439 (FP)
+  Actual Surge          1,211,648 (FN)      4,830,880 (TP)
+
+
+  FP Rate: 0.2372
+  FN Rate: 0.2005
+  Precision: 0.5808
+  Recall:    0.7995
+
+
+  Classification Report:
+              precision    recall  f1-score   support
+
+    No Surge       0.90      0.76      0.83  14700028
+       Surge       0.58      0.80      0.67   6042528
+
+    accuracy                           0.77  20742556
+   macro avg       0.74      0.78      0.75  20742556
+weighted avg       0.81      0.77      0.78  20742556
+```
+![confusion_matrix_Manual_Features](visualizations/confusion_matrix_Manual_Features.png)
+This is the weakest model of the three we ran for the second round and that is also expected. These features are all contextual and missing the pricing signals we manually removed for the DTC. By running the same 16 features through LGBM, we were able to find more complext feature interactions and obtain better performance with an overall AUC of 0.8642, which is significantly better than random and better than DTC. However, we can see that the FP rate of 23.72% and FN rate of 20.05% indicate that the model is not confident at discriminating between surge and not surge without the pricing signals. It tells us that the contextual features are not unique enough without the fare information for the model to predict surge with precision. If we were trying to predict surge conditions without knowing the fare, this model tells us that we can, but not well enough. At least not without more feature engineering and hyperparameter tuning.
+
+## 9.3 LGBM + PCA (18 features)
+```
+lgbm_pca_features Results:
+  Best iteration:     500
+  Metric               Train        Validation     Test    
+  ---------------------------------------------------------
+  AUC-ROC              0.9776       0.9775         0.9775
+  Accuracy             0.9097       0.9096         0.9095
+  F1 (weighted)        0.9109       0.9107         0.9107
+
+  Confusion Matrix:
+                       Predicted No Surge  Predicted Surge
+  Actual No Surge      9,203,617 (TN)       1,037,670 (FP)
+  Actual Surge           368,047 (FN)       4,922,148 (TP)
+
+
+  FP Rate: 0.1013
+  FN Rate: 0.0696
+  Precision: 0.8259
+  Recall:    0.9304
+
+
+  Classification Report:
+              precision    recall  f1-score   support
+
+    No Surge       0.96      0.90      0.93  10241287
+       Surge       0.83      0.93      0.88   5290195
+
+    accuracy                           0.91  15531482
+   macro avg       0.89      0.91      0.90  15531482
+weighted avg       0.92      0.91      0.91  15531482
+```
+![confusion_matrix_PCA_Features](visualizations/confusion_matrix_PCA_Features.png)
+Surprisingly strong results from the PCA model with only a 0.0204 drop in AUC from the full feature set. We do have higher FP and FN rates which did lower the precision but the recall is still in relatively good shape. This validates that even with only 18 linear combinations, PCA was able to preserve the most important variance in the data rather effectively. The only real loss is that we are unable to interpret the components as we are feature importance.
+
+Dimensionality reduction with 18 components was able to retain 95% of the variance compared to the full 23 feature set, meaning the 2% drop in AUC was the information lost in the last 5% of variance that was discarded. However, the tradeoff of ~22% less dimensions for only a 2% AUC loss is acceptable since we have faster training and less resource usage. If our goal was to maximize predictive power then we would use the full feature set, but if we have resource constraints, the reduced dimension component set would work almost as well.
+
+## 9.4 Fitting Analysis
+We essentially see zero gap between validation and training, suggesting that the models are generalizing well from training to unseen data and not overfitting. This is also due to the large dataset we have, which allows LGBM to learn patterns that are robust and make the chances of overfitting essentially impossible. The regularization parameters also help to some degree as well:
+```
+lambda_l1=0.1          regularization penalty on leaf weights, encouranges some leaf weights to become zero, leads to removing less important splits.
+lambda_l2=0.1          regularization penalty on leaf weights, shrinks leaf weights towards zero, smooths models behavior by shrinking magnitude.
+feature_fraction=0.8   randomly uses 80% of features at each tree split, prevents relying on single feature and reduces correlation between trees.
+bagging_fraction=0.8   randomly samples 80% of rows for each tree, introduces noise so trees aren't identical, improves generalization.
+```
+
+The manual feature set model is also not underfitting, it is simply lacking the pricing signals that the other two models have so it hits a ceiling in terms of not having enough signal to effectively predict the outcome. This is also evident with all 3 models as none of them triggered early stopping, a sign that the models are approaching a maximum ceiling with the features available with only marginal improvements as training rounds continue. A test was conducted with `num_boost_round=1000` and none of the models triggered early stopping, but the marginal improvement from 500 to 1000 rounds was minute so we stopped at 500 to save time and resources.
+
+## 9.5 Conclusion
+The LGBM model was significantly better than the DTC on all 3 feature sets. The gradient boosting method was able to extract meaningful feature interactions that a single decision tree failed to learn.
+```
+Decision Tree (manual features):      AUC 0.6898
+LightGBM (manual features):           AUC 0.8642  (+17.4%)
+
+Decision Tree (full features):        AUC 0.9310
+LightGBM (full features):             AUC 0.9979  (+6.7%)
+```
+
+One thing to note here is that the DTC did have the entire dataset to train on while the LGBM model only have 10% of the data to train on. If the LGBM model was given the full dataset, these values would increase more so for the manual feature set than the full feature. The nearly identical performance across all 3 feature sets for the LGBM model confirm that they are reliable and able to generalize well on new data, which means we have a strong model that could be pushed further with some hyperparameter tuning and more fine grained feature engineering.
+
+Here we can see the feature importance of the full feature and manual feature models:
+![lgbm_feature_importance](visualizations/lgbm_feature_importance.png)
+
+# 10 Future Exploration and Improvements
+Some of the immediate benefits we would see come from hyperparameter tuning. The most impactful parameters would be:
+
+```
+num_leaves:        [30, 65, 125, 260]  # controls tree complexity
+learning_rate:     [0.01, 0.05, 0.1]   # smaller = more iterations needed but also increases time
+min_child_samples: [50, 100, 200]      # controls leaf granularity
+feature_fraction:  [0.6, 0.7, 0.8]     # random feature subsampling
+bagging_fraction:  [0.7, 0.8, 0.9]     # random row subsampling
+```
+By adjusting these parameters, we could optimize the model even further, especially for the manual feature selection. Another way to improve the model would be to adjust the classification threshold, which is currently at 0.5. Our class weights currently favor recall but we could adjust this to maximize the F1 score or minimize the weighted error by doing something along the lines of:
+
+``` python
+# Find threshold that maximizes F1 or minimizes weighted error
+from sklearn.metrics import precision_recall_curve
+
+precision, recall, thresholds = precision_recall_curve(
+    test_pd["is_surge"], test_preds
+)
+f1_scores = 2 * (precision * recall) / (precision + recall)
+optimal_threshold = thresholds[f1_scores.argmax()]
+print(f"Optimal threshold: {optimal_threshold:.4f}")
+```
+
+After hyperparameter tuning we can focus on feature engineering. It seems as though the `high_demand` feature we derived has almost zero importance in both the DTC and LGBM models. This either means that the 1.5 standard deviation threshold we set was too aggressive and can be dialed back or we can change it from a binary feature to a tiered feature with low, medium, high demand and encode it for model training. If it still has zero importance then it is just a poorly derived feature and we can remove it.
+
+We can also run this same setup across XGBoost with comparable parameters to see if level wise growth outperforms LGBM's leaf wise growth on this data. However, since these two models perform similarly, the tradeoff would be that XGBoost has similar results with longer run times. Since we have pretty strong models, it might be better to try using a neural network or deep learning approach instead that may potentially have the capability to pick up on non-linear combinations of PCA components.
+
+Finally, we can do more rigorous validation and testing by splitting the data up in time spans for training, validation, and testing. For example, we could train on 2019-2022 data, validate on 2023-2024 data, and test on 2025-2026 data. This would test to see if the model can generalize for future time periods instead of just random samples from the entire distribution. However, for this approach, we would have to normalize the fares over time or account for inflation and rising costs so that the model doesn't simply predict an increased base fare in the future as surge pricing.
